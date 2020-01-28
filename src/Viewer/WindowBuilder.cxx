@@ -149,6 +149,11 @@ void WindowBuilder::makeDefaultTraits(bool stencil)
             SG_LOG(SG_VIEW,SG_DEBUG,"Using initial window size: " << w << " x " << h);
         }
     }
+    bool headless = fgGetBool("/sim/startup/headless-mode", false);
+    if (headless) {
+        SG_LOG(SG_VIEW, SG_ALERT, "Headless view required: rendering window to pbuffer");
+        traits->pbuffer = true;
+    } // enable headless
 }
     
 } // of namespace flightgear
