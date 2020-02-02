@@ -22,7 +22,7 @@
 
 
 #ifdef HAVE_CONFIG_H
-#  include <config.h>
+#include <config.h>
 #endif
 
 #include <simgear/compiler.h>
@@ -38,7 +38,7 @@
 #include <osgDB/Registry>
 
 #if defined(HAVE_CRASHRPT)
-	#include <CrashRpt.h>
+#include <CrashRpt.h>
 
 // defined in bootstrap.cxx
 extern bool global_crashRptEnabled;
@@ -47,50 +47,50 @@ extern bool global_crashRptEnabled;
 
 // Class references
 #include <simgear/canvas/VGInitOperation.hxx>
-#include <simgear/scene/model/modellib.hxx>
-#include <simgear/scene/material/matlib.hxx>
-#include <simgear/scene/material/Effect.hxx>
-#include <simgear/props/AtomicChangeListener.hxx>
-#include <simgear/props/props.hxx>
-#include <simgear/timing/sg_time.hxx>
+#include <simgear/emesary/Emesary.hxx>
+#include <simgear/emesary/notifications.hxx>
 #include <simgear/io/raw_socket.hxx>
-#include <simgear/scene/tsync/terrasync.hxx>
 #include <simgear/math/SGMath.hxx>
 #include <simgear/math/sg_random.h>
 #include <simgear/misc/strutils.hxx>
+#include <simgear/props/AtomicChangeListener.hxx>
+#include <simgear/props/props.hxx>
+#include <simgear/scene/material/Effect.hxx>
+#include <simgear/scene/material/matlib.hxx>
+#include <simgear/scene/model/modellib.hxx>
+#include <simgear/scene/tsync/terrasync.hxx>
 #include <simgear/structure/commands.hxx>
-#include <simgear/emesary/Emesary.hxx>
-#include <simgear/emesary/notifications.hxx>
+#include <simgear/timing/sg_time.hxx>
 
 #include <Add-ons/AddonManager.hxx>
+#include <GUI/MessageBox.hxx>
+#include <GUI/gui.h>
+#include <Include/build.h>
+#include <Include/version.h>
 #include <Main/locale.hxx>
 #include <Model/panelnode.hxx>
+#include <Navaids/NavDataCache.hxx>
 #include <Scenery/scenery.hxx>
 #include <Sound/soundmanager.hxx>
 #include <Time/TimeManager.hxx>
-#include <GUI/gui.h>
-#include <GUI/MessageBox.hxx>
-#include <Viewer/splash.hxx>
-#include <Viewer/renderer.hxx>
 #include <Viewer/WindowSystemAdapter.hxx>
-#include <Navaids/NavDataCache.hxx>
-#include <Include/version.h>
-#include <Include/build.h>
+#include <Viewer/renderer.hxx>
+#include <Viewer/splash.hxx>
 
 #include "fg_commands.hxx"
-#include "fg_io.hxx"
-#include "main.hxx"
-#include "util.hxx"
 #include "fg_init.hxx"
+#include "fg_io.hxx"
 #include "fg_os.hxx"
 #include "fg_props.hxx"
+#include "main.hxx"
+#include "options.hxx"
 #include "positioninit.hxx"
 #include "screensaver_control.hxx"
 #include "subsystemFactory.hxx"
-#include "options.hxx"
+#include "util.hxx"
 
-#include <simgear/embedded_resources/EmbeddedResourceManager.hxx>
 #include <EmbeddedResources/FlightGear-resources.hxx>
+#include <simgear/embedded_resources/EmbeddedResourceManager.hxx>
 
 #if defined(HAVE_QT)
 #include <GUI/QtLauncher.hxx>
@@ -117,26 +117,19 @@ static SGPropertyNode_ptr nasal_gc_threaded_wait;
 
 #ifdef NASAL_BACKGROUND_GC_THREAD
 extern "C" {
-    extern void startNasalBackgroundGarbageCollection();
-    extern void stopNasalBackgroundGarbageCollection();
-    extern void performNasalBackgroundGarbageCollection();
-    extern void awaitNasalGarbageCollectionComplete(bool can_wait);
+extern void startNasalBackgroundGarbageCollection();
+extern void stopNasalBackgroundGarbageCollection();
+extern void performNasalBackgroundGarbageCollection();
+extern void awaitNasalGarbageCollectionComplete(bool can_wait);
 }
 #endif
-static  simgear::Notifications::MainLoopNotification mln_begin(simgear::Notifications::MainLoopNotification::Type::Begin);
-static  simgear::Notifications::MainLoopNotification mln_end(simgear::Notifications::MainLoopNotification::Type::End);
-static  simgear::Notifications::MainLoopNotification mln_started(simgear::Notifications::MainLoopNotification::Type::Started);
-static  simgear::Notifications::MainLoopNotification mln_stopped(simgear::Notifications::MainLoopNotification::Type::Stopped);
-static  simgear::Notifications::NasalGarbageCollectionConfigurationNotification *ngccn = nullptr;
+static simgear::Notifications::MainLoopNotification                             mln_begin(simgear::Notifications::MainLoopNotification::Type::Begin);
+static simgear::Notifications::MainLoopNotification                             mln_end(simgear::Notifications::MainLoopNotification::Type::End);
+static simgear::Notifications::MainLoopNotification                             mln_started(simgear::Notifications::MainLoopNotification::Type::Started);
+static simgear::Notifications::MainLoopNotification                             mln_stopped(simgear::Notifications::MainLoopNotification::Type::Stopped);
+static simgear::Notifications::NasalGarbageCollectionConfigurationNotification* ngccn = nullptr;
 // This method is usually called after OSG has finished rendering a frame in what OSG calls an idle handler and
 // is reposonsible for invoking all of the relevant per frame processing; most of which is handled by subsystems.
-
-
-
-
-
-
-
 
 
 // Chris Calef - dataSource
@@ -201,27 +194,17 @@ int mTick=0;//Better way to measure time?
 */
 
 
-
-
-
 //End dataSource
 
 
-
-
-
-
-
-
-
-static void fgMainLoop( void )
+static void fgMainLoop(void)
 {
     //
     // the Nasal GC will automatically run when (during allocation) it discovers that more space is needed.
     // This has a cost of between 5ms and 50ms (depending on the amount of currently active Nasal).
     // The result is unscheduled and unpredictable pauses during normal operation when the garbage collector
     // runs; which typically occurs at intervals between 1sec and 20sec.
-    // 
+    //
     // The solution to this, which overall increases CPU load, is to use a thread to do this; as Nasal is thread safe
     // so what we do is to launch the garbage collection at the end of the main loop and then wait for completion at the start of the
     // next main loop.
@@ -233,15 +216,15 @@ static void fgMainLoop( void )
 
     // first we see if the config has changed. The notification will return true from SetActive/SetWait when the
     // value has been changed - and thus we notify the Nasal system that it should configure itself accordingly.
-    auto use_threaded_gc = nasal_gc_threaded->getBoolValue();
-    auto threaded_wait = nasal_gc_threaded_wait->getBoolValue();
+    auto use_threaded_gc  = nasal_gc_threaded->getBoolValue();
+    auto threaded_wait    = nasal_gc_threaded_wait->getBoolValue();
     bool notify_gc_config = false;
-    notify_gc_config = ngccn->SetActive(use_threaded_gc);
+    notify_gc_config      = ngccn->SetActive(use_threaded_gc);
     notify_gc_config |= ngccn->SetWait(threaded_wait);
     if (notify_gc_config)
-         simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(*ngccn);
+        simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(*ngccn);
 
-     simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_begin);
+    simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_begin);
 
     if (sglog().has_popup()) {
         std::string s = sglog().get_popup();
@@ -287,8 +270,7 @@ static void initTerrasync()
 
     // wipe the cache file if requested
     if (flightgear::Options::sharedInstance()->isOptionSet("restore-defaults")) {
-        SG_LOG(SG_GENERAL, SG_INFO, "restore-defaults requested, wiping terrasync update cache at " <<
-               tsyncCache);
+        SG_LOG(SG_GENERAL, SG_INFO, "restore-defaults requested, wiping terrasync update cache at " << tsyncCache);
         if (tsyncCache.exists()) {
             tsyncCache.remove();
         }
@@ -311,13 +293,12 @@ static void initTerrasync()
 static void fgSetVideoOptions()
 {
     std::string vendor = fgGetString("/sim/rendering/gl-vendor");
-    SGPath path(globals->get_fg_root());
+    SGPath      path(globals->get_fg_root());
     path.append("Video");
     path.append(vendor);
-    if (path.exists())
-    {
+    if (path.exists()) {
         std::string renderer = fgGetString("/sim/rendering/gl-renderer");
-        size_t pos = renderer.find("x86/");
+        size_t      pos      = renderer.find("x86/");
         if (pos == std::string::npos) {
             pos = renderer.find('/');
         }
@@ -327,15 +308,14 @@ static void fgSetVideoOptions()
         if (pos != std::string::npos) {
             renderer = renderer.substr(0, pos);
         }
-        path.append(renderer+".xml");
+        path.append(renderer + ".xml");
         if (path.exists()) {
             SG_LOG(SG_INPUT, SG_INFO, "Reading video settings from " << path);
             try {
-                SGPropertyNode *r_prop = fgGetNode("/sim/rendering");
+                SGPropertyNode* r_prop = fgGetNode("/sim/rendering");
                 readProperties(path, r_prop);
             } catch (sg_exception& e) {
-                SG_LOG(SG_INPUT, SG_WARN, "failed to read video settings:" << e.getMessage()
-                << "(from " << e.getOrigin() << ")");
+                SG_LOG(SG_INPUT, SG_WARN, "failed to read video settings:" << e.getMessage() << "(from " << e.getOrigin() << ")");
             }
 
             flightgear::Options* options = flightgear::Options::sharedInstance();
@@ -374,19 +354,19 @@ static void checkOpenGLVersion()
                 }
             }
         } // of NVIDIA-style version string
-    } // of three parts
+    }     // of three parts
 }
 
 static void registerMainLoop()
 {
     // stash current frame signal property
-    frame_signal = fgGetNode("/sim/signals/frame", true);
-    nasal_gc_threaded = fgGetNode("/sim/nasal-gc-threaded", true);
+    frame_signal           = fgGetNode("/sim/signals/frame", true);
+    nasal_gc_threaded      = fgGetNode("/sim/nasal-gc-threaded", true);
     nasal_gc_threaded_wait = fgGetNode("/sim/nasal-gc-threaded-wait", true);
-    fgRegisterIdleHandler( fgMainLoop );
+    fgRegisterIdleHandler(fgMainLoop);
 
-    mDataSource = new dataSource(true, 9985, "127.0.0.1"); 
-	//skyboxSocketConnect();//Chris Calef - dataSource
+    mDataSource = new dataSource(true, 9985, "127.0.0.1");
+    //skyboxSocketConnect();//Chris Calef - dataSource
 }
 
 // This is the top level master main function that is registered as
@@ -398,40 +378,39 @@ static void registerMainLoop()
 
 static int idle_state = 0;
 
-static void fgIdleFunction ( void ) {
+static void fgIdleFunction(void)
+{
     // Specify our current idle function state.  This is used to run all
     // our initializations out of the idle callback so that we can get a
     // splash screen up and running right away.
 
-    if ( idle_state == 0 ) {
-        if (guiInit())
-        {
+    if (idle_state == 0) {
+        if (guiInit()) {
             checkOpenGLVersion();
             fgSetVideoOptions();
-            idle_state+=2;
+            idle_state += 2;
             fgSplashProgress("loading-aircraft-list");
             fgSetBool("/sim/rendering/initialized", true);
         }
 
-    } else if ( idle_state == 2 ) {
+    } else if (idle_state == 2) {
         initTerrasync();
         idle_state++;
         fgSplashProgress("loading-nav-dat");
 
-    } else if ( idle_state == 3 ) {
-
+    } else if (idle_state == 3) {
         bool done = fgInitNav();
         if (done) {
-          ++idle_state;
-          fgSplashProgress("init-scenery");
+            ++idle_state;
+            fgSplashProgress("init-scenery");
         }
-    } else if ( idle_state == 4 ) {
+    } else if (idle_state == 4) {
         idle_state++;
 
         globals->add_new_subsystem<TimeManager>(SGSubsystemMgr::INIT);
 
         // Do some quick general initializations
-        if( !fgInitGeneral()) {
+        if (!fgInitGeneral()) {
             throw sg_exception("General initialization failed");
         }
 
@@ -446,11 +425,11 @@ static void fgIdleFunction ( void ) {
         ////////////////////////////////////////////////////////////////////
         // Initialize the material manager
         ////////////////////////////////////////////////////////////////////
-        globals->set_matlib( new SGMaterialLib );
+        globals->set_matlib(new SGMaterialLib);
         simgear::SGModelLib::setPanelFunc(FGPanelNode::load);
 
-    } else if (( idle_state == 5 ) || (idle_state == 2005)) {
-        idle_state+=2;
+    } else if ((idle_state == 5) || (idle_state == 2005)) {
+        idle_state += 2;
         flightgear::initPosition();
         flightgear::initTowerLocationListener();
 
@@ -468,16 +447,16 @@ static void fgIdleFunction ( void ) {
         globals->get_scenery()->bind();
 
         fgSplashProgress("creating-subsystems");
-    } else if (( idle_state == 7 ) || (idle_state == 2007)) {
+    } else if ((idle_state == 7) || (idle_state == 2007)) {
         bool isReset = (idle_state == 2007);
-        idle_state = 8; // from the next state on, reset & startup are identical
+        idle_state   = 8; // from the next state on, reset & startup are identical
         SGTimeStamp st;
         st.stamp();
         fgCreateSubsystems(isReset);
         SG_LOG(SG_GENERAL, SG_INFO, "Creating subsystems took:" << st.elapsedMSec());
         fgSplashProgress("binding-subsystems");
 
-    } else if ( idle_state == 8 ) {
+    } else if (idle_state == 8) {
         idle_state++;
         SGTimeStamp st;
         st.stamp();
@@ -485,50 +464,49 @@ static void fgIdleFunction ( void ) {
         SG_LOG(SG_GENERAL, SG_INFO, "Binding subsystems took:" << st.elapsedMSec());
 
         fgSplashProgress("init-subsystems");
-    } else if ( idle_state == 9 ) {
+    } else if (idle_state == 9) {
         SGSubsystem::InitStatus status = globals->get_subsystem_mgr()->incrementalInit();
-        if ( status == SGSubsystem::INIT_DONE) {
-          ++idle_state;
-          fgSplashProgress("finishing-subsystems");
+        if (status == SGSubsystem::INIT_DONE) {
+            ++idle_state;
+            fgSplashProgress("finishing-subsystems");
         } else {
-          fgSplashProgress("init-subsystems");
+            fgSplashProgress("init-subsystems");
         }
 
-    } else if ( idle_state == 10 ) {
+    } else if (idle_state == 10) {
         idle_state = 900;
         fgPostInitSubsystems();
         fgSplashProgress("finalize-position");
-    } else if ( idle_state == 900 ) {
+    } else if (idle_state == 900) {
         idle_state = 1000;
 
         // setup OpenGL view parameters
         globals->get_renderer()->setupView();
 
-        globals->get_renderer()->resize( fgGetInt("/sim/startup/xsize"),
-                                         fgGetInt("/sim/startup/ysize") );
+        globals->get_renderer()->resize(fgGetInt("/sim/startup/xsize"),
+                                        fgGetInt("/sim/startup/ysize"));
         WindowSystemAdapter::getWSA()->windows[0]->gc->add(
-          new simgear::canvas::VGInitOperation()
-        );
+            new simgear::canvas::VGInitOperation());
 
-        int session = fgGetInt("/sim/session",0);
+        int session = fgGetInt("/sim/session", 0);
         session++;
-        fgSetInt("/sim/session",session);
+        fgSetInt("/sim/session", session);
     }
 
-    if ( idle_state == 1000 ) {
+    if (idle_state == 1000) {
         sglog().setStartupLoggingEnabled(false);
 
         // We've finished all our initialization steps, from now on we
         // run the main loop.
         fgSetBool("sim/sceneryloaded", false);
         registerMainLoop();
-        
+
         ngccn = new simgear::Notifications::NasalGarbageCollectionConfigurationNotification(nasal_gc_threaded->getBoolValue(), nasal_gc_threaded_wait->getBoolValue());
-         simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(*ngccn);
-         simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_started);
+        simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(*ngccn);
+        simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_started);
     }
 
-    if ( idle_state == 2000 ) {
+    if (idle_state == 2000) {
         fgStartNewReset();
         idle_state = 2005;
     }
@@ -537,7 +515,7 @@ static void fgIdleFunction ( void ) {
 void fgResetIdleState()
 {
     idle_state = 2000;
-    fgRegisterIdleHandler( &fgIdleFunction );
+    fgRegisterIdleHandler(&fgIdleFunction);
 }
 
 void fgInitSecureMode()
@@ -545,12 +523,12 @@ void fgInitSecureMode()
     bool secureMode = true;
     if (Options::sharedInstance()->isOptionSet("allow-nasal-from-sockets")) {
         SG_LOG(SG_GENERAL, SG_ALERT, "\n!! Network connections allowed to use Nasal !!\n"
-       "Network connections will be allowed full access to the simulator \n"
-       "including running arbitrary scripts. Ensure you have adequate security\n"
-        "(such as a firewall which blocks external connections).\n");
+                                     "Network connections will be allowed full access to the simulator \n"
+                                     "including running arbitrary scripts. Ensure you have adequate security\n"
+                                     "(such as a firewall which blocks external connections).\n");
         secureMode = false;
     }
-    
+
     // it's by design that we overwrite any existing property tree value
     // here - this prevents an aircraft or add-on setting the property
     // value underneath us, eg in their -set.xml
@@ -561,10 +539,10 @@ void fgInitSecureMode()
                               SGPropertyNode::PROTECTED);
 }
 
-static void upper_case_property(const char *name)
+static void upper_case_property(const char* name)
 {
     using namespace simgear;
-    SGPropertyNode *p = fgGetNode(name, false);
+    SGPropertyNode* p = fgGetNode(name, false);
     if (!p) {
         p = fgGetNode(name, true);
         p->setStringValue("");
@@ -595,8 +573,8 @@ static void ATIScreenSizeHack()
 // Propose NVIDIA Optimus / AMD Xpress to use high-end GPU
 #if defined(SG_WINDOWS)
 extern "C" {
-    _declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
-    _declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+_declspec(dllexport) DWORD NvOptimusEnablement                = 0x00000001;
+_declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 #endif
 
@@ -615,23 +593,23 @@ static void logToHome()
     sglog().logToFile(logPath, SG_ALL, SG_INFO);
 
 #if defined(HAVE_CRASHRPT)
-	if (global_crashRptEnabled) {
-		crAddFile2(logPath.c_str(), NULL, "FlightGear Log File", CR_AF_MAKE_FILE_COPY);
-		SG_LOG( SG_GENERAL, SG_INFO, "CrashRpt enabled");
-	} else {
-		SG_LOG(SG_GENERAL, SG_WARN, "CrashRpt enabled at compile time but failed to install");
-	}
+    if (global_crashRptEnabled) {
+        crAddFile2(logPath.c_str(), NULL, "FlightGear Log File", CR_AF_MAKE_FILE_COPY);
+        SG_LOG(SG_GENERAL, SG_INFO, "CrashRpt enabled");
+    } else {
+        SG_LOG(SG_GENERAL, SG_WARN, "CrashRpt enabled at compile time but failed to install");
+    }
 #endif
 }
 
 // Main top level initialization
-int fgMainInit( int argc, char **argv )
+int fgMainInit(int argc, char** argv)
 {
     // set default log level to 'info' for startup, we will revert to a lower
     // level once startup is done.
-    sglog().setLogLevels( SG_ALL, SG_INFO );
+    sglog().setLogLevels(SG_ALL, SG_INFO);
     sglog().setStartupLoggingEnabled(true);
-    
+
     globals = new FGGlobals;
     if (!fgInitHome()) {
         return EXIT_FAILURE;
@@ -644,13 +622,12 @@ int fgMainInit( int argc, char **argv )
     }
 
     std::string version(FLIGHTGEAR_VERSION);
-    SG_LOG( SG_GENERAL, SG_INFO, "FlightGear:  Version " << version );
-    SG_LOG( SG_GENERAL, SG_INFO, "FlightGear:  Build Type " << FG_BUILD_TYPE );
-    SG_LOG( SG_GENERAL, SG_INFO, "Built with " << SG_COMPILER_STR);
-	SG_LOG( SG_GENERAL, SG_INFO, "Jenkins number/ID " << JENKINS_BUILD_NUMBER << ":"
-			<< JENKINS_BUILD_ID);
+    SG_LOG(SG_GENERAL, SG_INFO, "FlightGear:  Version " << version);
+    SG_LOG(SG_GENERAL, SG_INFO, "FlightGear:  Build Type " << FG_BUILD_TYPE);
+    SG_LOG(SG_GENERAL, SG_INFO, "Built with " << SG_COMPILER_STR);
+    SG_LOG(SG_GENERAL, SG_INFO, "Jenkins number/ID " << JENKINS_BUILD_NUMBER << ":" << JENKINS_BUILD_ID);
 
-#if OSG_VERSION_LESS_THAN(3,4,1)
+#if OSG_VERSION_LESS_THAN(3, 4, 1)
     SG_LOG(SG_GENERAL, SG_ALERT, "Minimum supported OpenScenegraph is V3.4.1 - currently using " << osgGetVersion() << " This can cause fatal OSG 'final reference count' errors at runtime");
 #endif
 
@@ -659,19 +636,17 @@ int fgMainInit( int argc, char **argv )
         /* OpenBSD defaults to a small maximum data segment, which can cause
         flightgear to crash with SIGBUS, so output a warning if this is likely.
         */
-        struct rlimit   rlimit;
-        int e = getrlimit(RLIMIT_DATA, &rlimit);
+        struct rlimit rlimit;
+        int           e = getrlimit(RLIMIT_DATA, &rlimit);
         if (e) {
-            SG_LOG( SG_GENERAL, SG_INFO, "This is OpenBSD; getrlimit() failed: " << strerror(errno));
-        }
-        else {
-            long long   required = 4LL * (1LL<<30);
+            SG_LOG(SG_GENERAL, SG_INFO, "This is OpenBSD; getrlimit() failed: " << strerror(errno));
+        } else {
+            long long required = 4LL * (1LL << 30);
             if (rlimit.rlim_cur < required) {
-                SG_LOG( SG_GENERAL, SG_POPUP, ""
-                        << "Max data segment (" << rlimit.rlim_cur << "bytes) too small.\n"
-                        << "This can cause Flightgear to crash due to SIGBUS.\n"
-                        << "E.g. increase with 'ulimit -d " << required/1024 << "'."
-                        );
+                SG_LOG(SG_GENERAL, SG_POPUP, ""
+                                                 << "Max data segment (" << rlimit.rlim_cur << "bytes) too small.\n"
+                                                 << "This can cause Flightgear to crash due to SIGBUS.\n"
+                                                 << "E.g. increase with 'ulimit -d " << required / 1024 << "'.");
             }
         }
     }
@@ -680,16 +655,16 @@ int fgMainInit( int argc, char **argv )
     // seed the random number generator
     sg_srandom_time();
 
-    string_list *col = new string_list;
-    globals->set_channel_options_list( col );
+    string_list* col = new string_list;
+    globals->set_channel_options_list(col);
 
-    fgValidatePath(globals->get_fg_home(), false);  // initialize static variables
+    fgValidatePath(globals->get_fg_home(), false); // initialize static variables
     upper_case_property("/sim/presets/airport-id");
     upper_case_property("/sim/presets/runway");
     upper_case_property("/sim/tower/airport-id");
     upper_case_property("/autopilot/route-manager/input");
 
-// check if the launcher is requested, since it affects config file parsing
+    // check if the launcher is requested, since it affects config file parsing
     bool showLauncher = flightgear::Options::checkForArg(argc, argv, "launcher");
     // an Info.plist bundle can't define command line arguments, but it can set
     // environment variables. This avoids needed a wrapper shell-script on OS-X.
@@ -732,7 +707,7 @@ int fgMainInit( int argc, char **argv )
         SG_LOG(SG_GENERAL, SG_ALERT, "\n!Launcher requested, but FlightGear was compiled without Qt support!\n");
     }
 #endif
-    
+
     fgInitSecureMode();
     fgInitAircraftPaths(false);
 
@@ -773,7 +748,7 @@ int fgMainInit( int argc, char **argv )
     fgOSInit(&argc, argv);
     _bootstrap_OSInit++;
 
-    fgRegisterIdleHandler( &fgIdleFunction );
+    fgRegisterIdleHandler(&fgIdleFunction);
 
     // Initialize sockets (WinSock needs this)
     simgear::Socket::initSockets();
@@ -800,7 +775,7 @@ int fgMainInit( int argc, char **argv )
     frame_signal.clear();
     fgOSCloseWindow();
 
-     simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_stopped);
+    simgear::Emesary::GlobalTransmitter::instance()->NotifyAll(mln_stopped);
 
     simgear::clearEffectCache();
 
@@ -817,32 +792,17 @@ int fgMainInit( int argc, char **argv )
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////
 //  Chris Calef - dataSource - TEMP!!! If we keep this, then move it to new SkyboxSocket(?) class in its own file.
 
 
-
-
-
-
-
-
-
+void exitProgramTemp()
+{
+    SG_LOG(SG_INPUT, SG_INFO, "exitProgramTemp: Program exit attempting...");
+    fgSetBool("/sim/signals/exit", true);//Maybe?
+    globals->saveUserSettings();
+    fgOSExit(0);
+}
 
 
 /*
@@ -977,7 +937,7 @@ void skyboxSocketConnect()
 //	data[0] = HL;
 //	data[1] = HH;
 //	data[2] = LL;
-//	data[3] = LH;	
+//	data[3] = LH;
 //	//data[0] = LL;
 //	//data[1] = LH;
 //	//data[2] = HL;
@@ -1690,8 +1650,3 @@ std::string getTileName(double tileStartPointLong,double tileStartPointLat)
 
 
 */
-
-
-
-
-

@@ -5,6 +5,11 @@
 #include <simgear\debug\logstream.hxx>
 #include "dataSource.h"
 
+//Nope! Including any of these causes the bind conflict!
+//#include <src\Main\fg_props.hxx>
+//#include <src\Main\fg_os.hxx>
+//#include <src\Main\fg_init.cxx>
+
 //using namespace std;//Or, maybe not, possible name conflicts.
 
 WSADATA wsaData;
@@ -270,6 +275,10 @@ void dataSource::readPacket()
         {
             handleBaseRequest();
         }
+        else if (opcode == OPCODE_QUIT)
+        {
+            handleQuitRequest();
+        }
         else if (opcode == OPCODE_TEST) 
         {
             handleTestRequest();            
@@ -483,13 +492,40 @@ void dataSource::clearString()
 
 /////////////////////////////////////////////////////////////////////////////////
 
+void dataSource::addQuitRequest()
+{
+    short opcode = OPCODE_QUIT;
+    mSendControls++;
+    writeShort(opcode);
+    writeInt(mCurrentTick);
+}
+
+void dataSource::handleQuitRequest()
+{
+    //fgShutdownHome();//Nope, including fg_init breaks compile with bind conflict.
+
+    SG_LOG(SG_INPUT, SG_INFO, "dataSource: Program exit requested.");
+
+    exitProgramTemp();//TEMP!
+
+    //Damn! Every inclusion causes the bind conflict. All will be fixed if I ditch and go to telnet.
+    //But meanwhile, I should be able to call out to nasal or something, to call a command.
+    //fgSetBool("/sim/signals/exit", true);
+    //globals->saveUserSettings();
+    //fgOSExit(0);
+
+    if (mDebugToConsole)
+        std::cout << "handleQuitRequest \n";
+    if (mDebugToFile)
+        fprintf(mDebugLog, "handleQuitRequest\n\n");
+}
+
 void dataSource::addBaseRequest()
 {
     short opcode = OPCODE_BASE;
-    mSendControls++; //(Increment this every time you add a control.)
+    mSendControls++;
     writeShort(opcode);
     writeInt(mCurrentTick);
-    //For a baseRequest, do nothing but send a tick value to make sure there's a connection.
 }
 
 void dataSource::handleBaseRequest()
@@ -508,14 +544,12 @@ void dataSource::handleBaseRequest()
 void dataSource::addTestRequest()
 {
     short opcode = OPCODE_TEST;
-    mSendControls++; //(Increment this every time you add a control.)
+    mSendControls++;
     writeShort(opcode);
     writeInt(mCurrentTick * 2);
     writeFloat((float)mCurrentTick * 0.999f);
     writeDouble((float)mCurrentTick * 10000000.0f);
     writeString("This is a test packet.");
-
-    //For a baseRequest, do nothing but send a tick value to make sure there's a connection.
 }
 
 void dataSource::handleTestRequest()

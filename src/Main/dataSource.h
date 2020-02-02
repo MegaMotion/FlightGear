@@ -17,6 +17,8 @@
 #define OPCODE_BASE 1
 #define OPCODE_TEST 2
 
+#define OPCODE_QUIT 10
+
 #define OPCODE_PHOTO 51
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +38,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+void exitProgramTemp();
 
 enum serverConnectStage {
     NoServerSocket,
@@ -135,6 +138,9 @@ public:
     //void *readBlob();
 
     void clearString();
+
+    void addQuitRequest();
+    void handleQuitRequest();
 
     void addBaseRequest();
     void handleBaseRequest();
