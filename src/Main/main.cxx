@@ -100,7 +100,7 @@ extern bool global_crashRptEnabled;
 #include <sys/resource.h>
 #endif
 
-#include "dataSource.h"
+#include "controlDataSource.h"
 
 using namespace flightgear;
 
@@ -137,7 +137,7 @@ static simgear::Notifications::NasalGarbageCollectionConfigurationNotification* 
 //NEW DATASOURCE:
 
 
-dataSource* mDataSource;
+controlDataSource* mDataSource;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -365,7 +365,7 @@ static void registerMainLoop()
     nasal_gc_threaded_wait = fgGetNode("/sim/nasal-gc-threaded-wait", true);
     fgRegisterIdleHandler(fgMainLoop);
 
-    mDataSource = new dataSource(true, 9985, "127.0.0.1");
+    mDataSource = new controlDataSource(true, true, 9985, "127.0.0.1");
     //skyboxSocketConnect();//Chris Calef - dataSource
 }
 

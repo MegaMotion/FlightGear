@@ -2,14 +2,14 @@
 // Copyright (c) 2020 Chris Calef
 //-----------------------------------------------------------------------------
 
-#ifndef __DATASOURCE_H__
-#define __DATASOURCE_H__
+#ifndef _DATASOURCE_H_
+#define _DATASOURCE_H_
 
 /////// Comment this out for linux builds.   //////////////
 #define windows_OS
 ///////////////////////////////////////////////////////////
 
-//These two were needed in standalone, not sure in FG
+//Needed in standalone version, not sure about Torque.
 //#define _WINSOCK_DEPRECATED_NO_WARNINGS
 //#define _CRT_SECURE_NO_WARNINGS
 //#pragma comment(lib, "Ws2_32.lib")
@@ -17,9 +17,12 @@
 #define OPCODE_BASE 1
 #define OPCODE_TEST 2
 
+//controlDataSource
 #define OPCODE_QUIT 10
 
+//photoPi project
 #define OPCODE_PHOTO 51
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,7 +106,7 @@ public:
 
     FILE* mDebugLog;
 
-    dataSource(bool listening, int port, char* IP);
+	   dataSource(bool listening, bool alternating, int port, char *IP);
     ~dataSource();
 
     void tick();
@@ -112,7 +115,6 @@ public:
     void bindListenSocket();
     void connectListenSocket();
     void listenForConnection();
-    void receivePacket();
     void readPacket();
     void clearReturnPacket();
     void allocateBuffers();
@@ -139,13 +141,11 @@ public:
 
     void clearString();
 
-    void addQuitRequest();
-    void handleQuitRequest();
-
     void addBaseRequest();
     void handleBaseRequest();
 
     void addTestRequest();
     void handleTestRequest();
 };
-#endif
+
+#endif // _DATASOURCE_H_
