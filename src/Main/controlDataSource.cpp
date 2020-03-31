@@ -1,73 +1,113 @@
 //-----------------------------------------------------------------------------
-// Copyright (c) 2015 Chris Calef
+// Copyright (c) 2020 Chris Calef
 //-----------------------------------------------------------------------------
 
 #include "controlDataSource.h"
 #include <simgear\debug\logstream.hxx>
 
-extern void exitProgramTemp();
+extern void  exitProgramTemp();
+extern DWORD returnTimeOfDay();
+extern void  doEngineStart();
+extern void  doAircraftReset();
 
-
-controlDataSource::controlDataSource(bool listening, bool alternating, int port, char *IP) : dataSource(listening, alternating, port, IP)
+controlDataSource::controlDataSource(bool listening, bool alternating, int port, char* IP) : dataSource(listening, alternating, port, IP)
 {
-
 }
 
 controlDataSource::~controlDataSource()
 {
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 void controlDataSource::tick()
 {
-	if (mListening)
-	{
-		//Con::printf("controlDataSource tick %d server stage %d", mCurrentTick, mServerStage);
-		switch (mServerStage)
-		{
-		case NoServerSocket:
-			createListenSocket(); break;
-		case ServerSocketCreated:
-			bindListenSocket(); break;
-		case ServerSocketBound:
-			connectListenSocket(); break;
-		case ServerSocketListening:
-			listenForConnection(); break;
-		case ServerSocketAccepted:
-			readPacket(); 
-			break;
-			//case PacketReceived:
-			//    readPacket();
-			//    break;
-			//case PacketRead:
-			//    mServerStage = ServerSocketListening;
-			//    break;
-		}
-	}
-	else
-	{
-		//Con::printf("controlDataSource tick %d client stage %d", mCurrentTick, mClientStage);
-		switch (mClientStage)
-		{
-		case NoClientSocket:
-			connectSendSocket(); break;
-		case ClientSocketCreated:
-			break;
-		case ClientSocketConnected:
-			addBaseRequest();
-			addTestRequest();
-			sendPacket();
-			break;
-		}
-	}
-	mCurrentTick++;
+    char message[1024];
+
+    if (mSendControls > 0) 
+    {
+        //sprintf(message, "controlDataSource sending, sendControls %d  clientStage %d  ", mSendControls, mClientStage);
+        //SG_LOG(SG_GENERAL, SG_INFO, message);
+        if (mClientStage == ClientSocketConnected)
+            sendPacket();
+        else
+            connectSendSocket();
+    } 
+    else if (mListening)
+    {
+        //sprintf(message, "controlDataSource listening, serverStage %d", mServerStage);
+        //SG_LOG(SG_GENERAL, SG_INFO, message);
+        if (mServerStage == ServerSocketAccepted)
+            readPacket();
+        else
+            connectListenSocket();
+    }
+    mCurrentTick++;	
 }
 
 
+/*
+    if (mListening) {
+        //sprintf(message, "controlDataSource tick %d server stage %d time %d", mCurrentTick, mServerStage, returnTimeOfDay());
+        //SG_LOG(SG_GENERAL, SG_INFO, message);
+        switch (mServerStage) {
+        case NoServerSocket:
+            createListenSocket();
+            break;
+        case ServerSocketCreated:
+            bindListenSocket();
+            break;
+        case ServerSocketBound:
+            connectListenSocket();
+            break;
+        case ServerSocketListening:
+            listenForConnection();
+            break;
+        case ServerSocketAccepted:
+            readPacket();
+            break;
+            //case PacketReceived:
+            //    readPacket();
+            //    break;
+            //case PacketRead:
+            //    mServerStage = ServerSocketListening;
+            //    break;
+        }
+    } else {
+        //sprintf(message, "controlDataSource tick %d client stage %d time %d", mCurrentTick, mClientStage, returnTimeOfDay());
+        //SG_LOG(SG_GENERAL, SG_INFO, message);
+        switch (mClientStage) {
+        case NoClientSocket:
+            connectSendSocket();
+            break;
+        case ClientSocketCreated:
+            break;
+        case ClientSocketConnected:
+            addBaseRequest();
+            //addTestRequest();
+            sendPacket();
+            break;
+        }
+    }
+    mCurrentTick++;
+    */
+
 void controlDataSource::readPacket()
 {
-    short opcode, controlCount; //,packetCount;
+    short   opcode, controlCount; //,packetCount;
+    char    message[1024];
+    FD_SET  ReadSet;
+    DWORD   total;
+    timeval tval;
+    tval.tv_sec  = 0;
+    tval.tv_usec = 30;
+
+    FD_ZERO(&ReadSet);
+    FD_SET(mWorkSockfd, &ReadSet);
+
+    //THIS is how you actually enforce non-blocking status! Recv will just wait, on its own.
+    total = select(0, &ReadSet, NULL, NULL, &tval);
+    if (total == 0)
+        return;
 
     int n = recv(mWorkSockfd, mReturnBuffer, mPacketSize, 0); //mWorkSockfd
     if (n < 0)
@@ -77,8 +117,7 @@ void controlDataSource::readPacket()
     for (short i = 0; i < controlCount; i++) {
         opcode = readShort();
 
-        char message[1024];
-        sprintf(message, "controlDataSource Reading packet, opcode = %d", opcode);
+        sprintf(message, "controlDataSource Reading packet, opcode = %d time %d", opcode, returnTimeOfDay());
         SG_LOG(SG_GENERAL, SG_INFO, message);
         if (mDebugToConsole)
             std::cout << "Reading packet, opcode = " << opcode << "\n";
@@ -91,21 +130,25 @@ void controlDataSource::readPacket()
             handleTestRequest();
         } else if (opcode == OPCODE_QUIT) {
             handleQuitRequest();
+        } else if (opcode == OPCODE_ENGINE_START) {
+            handleEngineStartRequest();
+        } else if (opcode == OPCODE_RESET) {
+            handleResetRequest();
         }
     }
     clearReturnPacket();
     //mServerStage = PacketRead;
-    mServerStage = ServerSocketAccepted;
-    if (mAlternating)
-        mListening = false;
+    //mServerStage = ServerSocketAccepted;
+    //if (mAlternating)
+    //    mListening = false;
 }
 
 void controlDataSource::addQuitRequest()
 {
-	short opcode = OPCODE_QUIT;
-	mSendControls++;//(Increment this every time you add a control.)
-	writeShort(opcode);
-	//For a baseRequest, do nothing but send a tick value to make sure there's a connection.
+    short opcode = OPCODE_QUIT;
+    mSendControls++;
+    writeShort(opcode);
+    //For a baseRequest, do nothing but send a tick value to make sure there's a connection.
 }
 
 void controlDataSource::handleQuitRequest()
@@ -113,10 +156,45 @@ void controlDataSource::handleQuitRequest()
     char message[1024];
     sprintf(message, "dataSource - handleQuitRequest");
     SG_LOG(SG_GENERAL, SG_INFO, message);
-	if (mDebugToConsole)
-		std::cout << "handleQuitRequest \n";
-	if (mDebugToFile)
-		fprintf(mDebugLog, "handleQuitRequest\n\n");
+    if (mDebugToConsole)
+        std::cout << "handleQuitRequest \n";
+    if (mDebugToFile)
+        fprintf(mDebugLog, "handleQuitRequest\n\n");
 
-	exitProgramTemp();
+    exitProgramTemp();
+}
+
+
+void controlDataSource::addEngineStartRequest()
+{
+    short opcode = OPCODE_ENGINE_START;
+    mSendControls++;
+    writeShort(opcode);
+}
+
+void controlDataSource::handleEngineStartRequest()
+{
+    char message[1024];
+    sprintf(message, "dataSource - handleEngineStartRequest");
+    SG_LOG(SG_GENERAL, SG_INFO, message);
+
+    doEngineStart();
+}
+
+void controlDataSource::addResetRequest()
+{
+    short opcode = OPCODE_RESET;
+    mSendControls++;
+    writeShort(opcode);
+}
+
+void controlDataSource::handleResetRequest()
+{
+    char message[1024];
+    sprintf(message, "dataSource - handleResetRequest");
+    SG_LOG(SG_GENERAL, SG_INFO, message);
+    
+    disconnectSockets();
+
+    doAircraftReset();
 }

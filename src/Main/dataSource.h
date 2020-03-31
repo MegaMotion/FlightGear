@@ -17,11 +17,10 @@
 #define OPCODE_BASE 1
 #define OPCODE_TEST 2
 
-//controlDataSource
-#define OPCODE_QUIT 10
 
-//photoPi project
-#define OPCODE_PHOTO 51
+//photoPi project -- move this to its own child class
+//#define OPCODE_PHOTO 51
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,13 +110,14 @@ public:
 
     void tick();
 
-    void createListenSocket();
-    void bindListenSocket();
+    //void createListenSocket();
+    //void bindListenSocket();
     void connectListenSocket();
-    void listenForConnection();
+    //void listenForConnection();
     void readPacket();
     void clearReturnPacket();
     void allocateBuffers();
+    void deallocateBuffers();
 
     void connectSendSocket();
     void sendPacket();

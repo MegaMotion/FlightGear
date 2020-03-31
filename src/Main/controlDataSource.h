@@ -1,5 +1,5 @@
 //-----------------------------------------------------------------------------
-// Copyright (c) 2015 Chris Calef
+// Copyright (c) 2020 Chris Calef
 //-----------------------------------------------------------------------------
 
 #ifndef _CONTROLDATASOURCE_H_
@@ -11,7 +11,9 @@
 
 #include "dataSource.h"
 
-
+#define OPCODE_QUIT 10
+#define OPCODE_ENGINE_START 11
+#define OPCODE_RESET 12
 
 /// Base class for various kinds of data sources, first one being worldDataSource, for terrain, sky, weather and map information.
 class controlDataSource : public dataSource 
@@ -27,6 +29,11 @@ class controlDataSource : public dataSource
 	   void addQuitRequest();
 	   void handleQuitRequest();
 
+	   void addEngineStartRequest();
+       void handleEngineStartRequest();
+
+       void addResetRequest();
+       void handleResetRequest();
 };
 
 #endif // _CONTROLDATASOURCE_H_

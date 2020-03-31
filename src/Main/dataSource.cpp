@@ -12,7 +12,9 @@
 
 //using namespace std;
 
-WSADATA wsaData;
+extern DWORD returnTimeOfDay();
+
+WSADATA     wsaData;
 
 dataSource::dataSource(bool listening, bool alternating, int port, char* IP)
 {
@@ -51,9 +53,11 @@ dataSource::dataSource(bool listening, bool alternating, int port, char* IP)
         mListening = true;
     }
 
-    mAlternating = false;
-    if (alternating)
-        mAlternating = true;
+    allocateBuffers();
+
+    //mAlternating = false;
+    //if (alternating)
+    //    mAlternating = true;
 
 #ifdef windows_OS
     if (WSAStartup(MAKEWORD(1, 1), &wsaData) == SOCKET_ERROR) {
@@ -69,165 +73,150 @@ dataSource::dataSource(bool listening, bool alternating, int port, char* IP)
 
 dataSource::~dataSource()
 {
+    SG_LOG(SG_GENERAL, SG_INFO, "dataSource - deconstructing!!!!");
+
     disconnectSockets();
+
+    deallocateBuffers();
 
     if (mDebugToFile)
         fclose(mDebugLog);
+}
+
+
+void dataSource::allocateBuffers()
+{
+    if (!mReturnBuffer) {
+        mReturnBuffer = new char[mPacketSize];
+        memset((void*)(mReturnBuffer), 0, mPacketSize);
+    }
+    if (!mSendBuffer) {
+        mSendBuffer = new char[mPacketSize];
+        memset((void*)(mSendBuffer), 0, mPacketSize);
+    }
+    if (!mStringBuffer) {
+        mStringBuffer = new char[mPacketSize];
+        memset((void*)(mStringBuffer), 0, mPacketSize);
+    }
+}
+
+void dataSource::deallocateBuffers()
+{
+    if (mReturnBuffer) {
+        delete[] mReturnBuffer;
+    }
+    if (mSendBuffer) {
+        delete[] mSendBuffer;
+    }
+    if (mStringBuffer) {
+        delete[] mStringBuffer;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 void dataSource::tick()
 {
-    //SG_LOG(SG_GENERAL, SG_INFO, "datasource tick! ");
-
-    if (mListening) {
-        switch (mServerStage) {
-        case NoServerSocket:
-            createListenSocket();
-            break;
-        case ServerSocketCreated:
-            bindListenSocket();
-            break;
-        case ServerSocketBound:
-            connectListenSocket();
-            break;
-        case ServerSocketListening:
-            listenForConnection();
-            break;
-        case ServerSocketAccepted:
-            readPacket();
-            break;
-        }
-    } else {
-        switch (mClientStage) {
-        case NoClientSocket:
-            connectSendSocket();
-            break;
-        case ClientSocketCreated:
-            break;
-        case ClientSocketConnected:
-            addBaseRequest();
-            addTestRequest();
+    //char message[1024];
+    //sprintf(message, "dataSource - SUCCESS connecting send socket, port %d!!!!!", kPort);
+    //SG_LOG(SG_GENERAL, SG_INFO, message);
+    if (mSendControls > 0) 
+    {
+        if (mClientStage == ClientSocketConnected)
             sendPacket();
-            break;
-        }
+        else
+            connectSendSocket();
+    } 
+    else if (mListening) 
+    {
+        if (mServerStage == ServerSocketAccepted)
+            readPacket();
+        else
+            connectListenSocket();
     }
     mCurrentTick++;
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-
-void dataSource::createListenSocket()
-{
-    SG_LOG(SG_GENERAL, SG_INFO, "dataSource - create listen socket!!!!!!");
-
-    mListenSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (mListenSockfd < 0) {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in createListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "ERROR in createListenSocket. Error: " << errno << " " << strerror(errno) << "\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "ERROR in createListenSocket. Error: %d %s\n", errno, strerror(errno));
-    } else {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in createListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "SUCCESS in createListenSocket\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "SUCCESS in createListenSocket\n");
-        mServerStage = serverConnectStage::ServerSocketCreated;
-    }
-
-#ifdef windows_OS
-    u_long iMode = 1;
-    ioctlsocket(mListenSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
-#else
-    int flags;
-    flags = fcntl(mListenSockfd, F_GETFL, 0);
-    if (flags != -1)
-        fcntl(mListenSockfd, F_SETFL, flags | O_NONBLOCK);
-
-    bool bOptVal = true;
-    if (setsockopt(mListenSockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&bOptVal, sizeof(BOOL)) == -1)
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - FAILED to set socket options!!!!!");
-
-#endif
-}
-
-void dataSource::bindListenSocket()
-{
-    struct sockaddr_in source_addr;
-
-#ifdef windows_OS
-    ZeroMemory((char*)&source_addr, sizeof(source_addr));
-#else
-    bzero((char*)&source_addr, sizeof(source_addr));
-#endif
-
-    source_addr.sin_family      = AF_INET;
-    source_addr.sin_addr.s_addr = inet_addr(mSourceIP);
-    if (mClientStage > 0)                        // For alternating, we want to take over two ports, one for sending and one for receiving.
-        source_addr.sin_port = htons(mPort + 1); // if client stage > 0, then that means we are the initial sender.
-    else
-        source_addr.sin_port = htons(mPort);
-
-    if (bind(mListenSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr)) < 0) {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in bindListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "ERROR in bindListenSocket. Error: " << errno << " " << strerror(errno) << "\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "ERROR in bindListenSocket. Error: %d  %s\n\n", errno, strerror(errno));
-    } else {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in bindListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "SUCCESS in bindListenSocket " << mListenSockfd << "\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "SUCCESS in bindListenSocket %d \n", mListenSockfd);
-        mServerStage = ServerSocketBound;
-    }
-}
-
 void dataSource::connectListenSocket()
 {
-    int n;
-    n = listen(mListenSockfd, 10);
-    if (n == -1) //SOCKET_ERROR)
-    {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in connectListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "ERROR in connectListenSocket!  errno " << errno << "  " << strerror(errno) << "\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "ERROR in connectListenSocket. Error: %d  %s\n\n", errno, strerror(errno));
-    } else {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in connectListenSocket!!!!!");
-        if (mDebugToConsole)
-            std::cout << "SUCCESS in connectListenSocket\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "SUCCESS in connectListenSocket \n");
+    int  kPort;
+    char message[1024];
 
-        allocateBuffers();
-        mServerStage = ServerSocketListening;
-    }
-}
+    if (mServerStage == NoServerSocket) {
+        mListenSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (mListenSockfd < 0) {
+            SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in createListenSocket!!!!!");
+        } else {
+            SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in createListenSocket!!!!!");
+            mServerStage = ServerSocketCreated;
+        }
+    } else if (mServerStage == ServerSocketCreated) {
+        struct sockaddr_in source_addr;
 
-void dataSource::listenForConnection()
-{
-    mPacketCount = 0;
-    mWorkSockfd  = accept(mListenSockfd, NULL, NULL);
-    if (mWorkSockfd == -1) {
-        //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in listenForConnection!!!!!");
-        if (mDebugToConsole && (errno != 11)) //11 = resource unavailable, ie waiting for connection.
-            std::cout << "ERROR in listenForConnection. Error " << errno << "   " << strerror(errno) << "\n";
-        if (mDebugToFile && (errno != 11))
-            fprintf(mDebugLog, "ERROR in listenForConnection. Error: %d  %s\n\n", errno, strerror(errno));
-    } else {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in listenForConnection!!!!!");
-        if (mDebugToConsole)
-            std::cout << "SUCCESS in listenForConnection.  workSock: " << mWorkSockfd << "\n";
-        if (mDebugToFile)
-            fprintf(mDebugLog, "SUCCESS in listenForConnection. workSock: %d \n\n", mWorkSockfd);
-        //receivePacket();
-        mServerStage = ServerSocketAccepted;
+#ifdef windows_OS
+        u_long iMode = 1;
+        ioctlsocket(mListenSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+        ZeroMemory((char*)&source_addr, sizeof(source_addr));
+#else
+        int flags;
+        flags = fcntl(mListenSockfd, F_GETFL, 0);
+        if (flags != -1)
+            fcntl(mListenSockfd, F_SETFL, flags | O_NONBLOCK);
+
+        bool bOptVal = true;
+        setsockopt(mListenSockfd, SOL_SOCKET, SO_REUSEADDR, (char *)&bOptVal, sizeof(BOOL)) == -1);
+        bzero((char*)&source_addr, sizeof(source_addr));
+#endif
+
+        source_addr.sin_family      = AF_INET;
+        source_addr.sin_addr.s_addr = inet_addr(mSourceIP);
+
+        if (mServer)
+            kPort = mPort;
+        else
+            kPort = mPort + 1;
+        source_addr.sin_port = htons(kPort);
+
+        if (bind(mListenSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr)) < 0) {
+            sprintf(message, "dataSource - ERROR in bindListenSocket, port %d!!!!!", kPort);
+            SG_LOG(SG_GENERAL, SG_INFO, message);
+        } else {
+            sprintf(message, "dataSource - SUCCESS in bindListenSocket, port %d!!!!!", kPort);
+            SG_LOG(SG_GENERAL, SG_INFO, message);
+            mServerStage = ServerSocketBound;
+        }
+    } else if (mServerStage == ServerSocketBound) {
+        int n = listen(mListenSockfd, 10);
+        if (n == -1) //SOCKET_ERROR)
+        {
+            SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in connectListenSocket!!!!!");
+        } else {
+            SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in connectListenSocket!!!!!");
+            mServerStage = ServerSocketListening;
+        }
+    } else if (mServerStage == ServerSocketListening) {
+        mPacketCount = 0;
+        mWorkSockfd  = -1;
+        mWorkSockfd  = accept(mListenSockfd, NULL, NULL);
+        if (mWorkSockfd == -1) {
+            //sprintf(message, "dataSource - nothing on listenSocket!!!!!");
+            //SG_LOG(SG_GENERAL, SG_INFO, message);
+        } else {
+#ifdef windows_OS
+            u_long iMode = 1;
+            ioctlsocket(mWorkSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+#else
+            int flags;
+            flags = fcntl(mWorkSockfd, F_GETFL, 0);
+            if (flags != -1)
+                fcntl(mWorkSockfd, F_SETFL, flags | O_NONBLOCK);
+
+            bool bOptVal = true;
+            setsockopt(mWorkSockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&bOptVal, sizeof(BOOL)) == -1);
+#endif
+            //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in listenForConnection!!!!!");
+            mServerStage = ServerSocketAccepted;
+        }
     }
 }
 
@@ -257,26 +246,11 @@ void dataSource::readPacket()
         }
     }
     clearReturnPacket();
-    //mServerStage = PacketRead;
-    mServerStage = ServerSocketAccepted;
-    if (mAlternating)
-        mListening = false;
-}
 
-void dataSource::allocateBuffers()
-{
-    if (!mReturnBuffer) {
-        mReturnBuffer = new char[mPacketSize];
-        memset((void*)(mReturnBuffer), 0, mPacketSize);
-    }
-    if (!mSendBuffer) {
-        mSendBuffer = new char[mPacketSize];
-        memset((void*)(mSendBuffer), 0, mPacketSize);
-    }
-    if (!mStringBuffer) {
-        mStringBuffer = new char[mPacketSize];
-        memset((void*)(mStringBuffer), 0, mPacketSize);
-    }
+    //mServerStage = PacketRead;
+    //mServerStage = ServerSocketListening;
+    //if (mAlternating)
+   //     mListening = false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -286,12 +260,12 @@ void dataSource::connectSendSocket()
     SG_LOG(SG_GENERAL, SG_INFO, "dataSource - create send socket!!!!!!");
     struct sockaddr_in source_addr;
 
-    mReturnBuffer = new char[mPacketSize];
-    mSendBuffer   = new char[mPacketSize];
-    mStringBuffer = new char[mPacketSize];
-    memset((void*)(mReturnBuffer), 0, mPacketSize);
-    memset((void*)(mSendBuffer), 0, mPacketSize);
-    memset((void*)(mStringBuffer), 0, mPacketSize);
+    //mReturnBuffer = new char[mPacketSize];
+    //mSendBuffer   = new char[mPacketSize];
+    //mStringBuffer = new char[mPacketSize];
+    //memset((void*)(mReturnBuffer), 0, mPacketSize);
+    //memset((void*)(mSendBuffer), 0, mPacketSize);
+    //memset((void*)(mStringBuffer), 0, mPacketSize);
 
     mWorkSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (mWorkSockfd < 0) {
@@ -300,6 +274,21 @@ void dataSource::connectSendSocket()
     }
 
     mReadyForRequests = true;
+
+#ifdef windows_OS //maybe??? maybe not? 
+    //u_long iMode = 1;
+    //ioctlsocket(mWorkSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+#else
+    int flags;
+    flags = fcntl(mWorkSockfd, F_GETFL, 0);
+    if (flags != -1)
+        fcntl(mWorkSockfd, F_SETFL, flags | O_NONBLOCK);
+
+    bool bOptVal = true;
+    if (setsockopt(mWorkSockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&bOptVal, sizeof(BOOL)) == -1)
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - FAILED to set socket options!!!!!");
+
+#endif
 
     //#ifdef windows_OS //Whoops! I guess not! This breaks the hell out of everything.
     //u_long iMode = 1;
@@ -314,19 +303,24 @@ void dataSource::connectSendSocket()
 
     source_addr.sin_family      = AF_INET;
     source_addr.sin_addr.s_addr = inet_addr(mSourceIP);
-    if (mServerStage > 0)
-        source_addr.sin_port = htons(mPort + 1);
-    else
-        source_addr.sin_port = htons(mPort);
+
+    int kPort                   = mPort;
+    if (mServer)
+        kPort = mPort + 1;
+    source_addr.sin_port = htons(kPort);
 
 
     int connectCode = connect(mWorkSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr));
     if (connectCode < 0) {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR connecting send socket!!!!!!");
+        char message[1024];
+        sprintf(message, "dataSource - ERROR connecting send socket, port %d!!!!!", kPort);
+        SG_LOG(SG_GENERAL, SG_INFO, message);
         printf("dataSource: ERROR connecting send socket: %d  IP: %s   Port: %d\n", connectCode, mSourceIP, mPort);
         return;
     } else {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS connecting send socket!!!!!!");
+        char message[1024];
+        sprintf(message, "dataSource - SUCCESS connecting send socket, port %d!!!!!", kPort);
+        SG_LOG(SG_GENERAL, SG_INFO, message);
         printf("dataSource: SUCCESS connecting send socket: %d\n", connectCode);
         mClientStage = ClientSocketConnected;
     }
@@ -334,22 +328,37 @@ void dataSource::connectSendSocket()
 
 void dataSource::sendPacket()
 {
+
     memset((void*)(mStringBuffer), 0, mPacketSize);
     memcpy((void*)mStringBuffer, reinterpret_cast<void*>(&mSendControls), sizeof(short));
     memcpy((void*)&mStringBuffer[sizeof(short)], (void*)mSendBuffer, mPacketSize - sizeof(short));
+    //std::string testBuffer = mStringBuffer;
+    char message[1024];
+    sprintf(message, "dataSource - sending packet, sendControls %d, sendBytes %d!!!!!",
+            mSendControls, mSendByteCounter);
+    SG_LOG(SG_GENERAL, SG_INFO, message);
+
+
     int n = send(mWorkSockfd, mStringBuffer, mPacketSize, 0);
     if (n < 0)
         SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR sending packet!!!!!!");
     else 
     {
-        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS sending packet!!!!!!");
-        if (mAlternating)
-            mListening = true; 
+        //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS sending packet!!!!!!");
+        //if (mAlternating)
+        //    mListening = true; 
     }
+
+    //TEMP, testing 
+    //char dataPacketFile[512];
+    //sprintf(dataPacketFile, "D:/Megamotion/Torque3D/My Projects/Megamotion/game/art/terrains/portlingrad/fgPacket.bin");
+    //FILE* fp = fopen(dataPacketFile, "w");
+    //fwrite(mSendBuffer, mPacketSize, 1, fp);
+    //fclose(fp);
 
     mLastSendTick = mCurrentTick;
     clearSendPacket();
-
+    
     mClientStage = ClientSocketConnected;
 }
 
@@ -463,6 +472,10 @@ char* dataSource::readString()
     int length = readInt();
     strncpy(mStringBuffer, &mReturnBuffer[mReturnByteCounter], length);
     mReturnByteCounter += length;
+
+    SG_LOG(SG_GENERAL, SG_INFO, "String read: ");
+    SG_LOG(SG_GENERAL, SG_INFO, mStringBuffer);
+
     return mStringBuffer;
 }
 
@@ -490,14 +503,21 @@ void dataSource::addBaseRequest()
 void dataSource::handleBaseRequest()
 {
     int tick = readInt();
-
+    int kPort;
+    if (mServer)
+        kPort = mPort;
+    else
+        kPort = mPort + 1;
     char message[1024];
-    sprintf(message, "dataSource - handleBaseRequest - tick = %d", tick);
+    sprintf(message, "dataSource - handleBaseRequest - tick = %d  my tick %d  port %d", tick, mCurrentTick, kPort);
     SG_LOG(SG_GENERAL, SG_INFO, message);
+
     if (mDebugToConsole)
         std::cout << "dataSource clientTick = " << tick << ", my tick " << mCurrentTick;
     if (mDebugToFile)
         fprintf(mDebugLog, "dataSource clientTick %d, my tick %d\n\n", tick, mCurrentTick);
+
+    //addBaseRequest();
 }
 
 void dataSource::addTestRequest()
@@ -508,7 +528,7 @@ void dataSource::addTestRequest()
     writeInt(mCurrentTick * 2);
     writeFloat((float)mCurrentTick * 0.999f);
     writeDouble((double)mCurrentTick * 10000000.0);
-    writeString("This is a test packet.");
+    writeString("This IS a test packet.");
 }
 
 void dataSource::handleTestRequest()
@@ -529,3 +549,179 @@ void dataSource::handleTestRequest()
     if (mDebugToFile)
         fprintf(mDebugLog, "handleTestRequest float = %f, double = %f,  string = '%s'\n\n", f, d, myString);
 }
+
+
+/*
+    if (mListening) {
+        switch (mServerStage) {
+        case NoServerSocket:
+            createListenSocket();
+            break;
+        case ServerSocketCreated:
+            bindListenSocket();
+            break;
+        case ServerSocketBound:
+            connectListenSocket();
+            break;
+        case ServerSocketListening:
+            listenForConnection();
+            break;
+        case ServerSocketAccepted:
+            readPacket();
+            break;
+        }
+    } else {
+        switch (mClientStage) {
+        case NoClientSocket:
+            connectSendSocket();
+            break;
+        case ClientSocketCreated:
+            break;
+        case ClientSocketConnected:
+            addBaseRequest();
+            //addTestRequest();
+            sendPacket();
+            break;
+        }
+    }
+    mCurrentTick++;
+
+
+/////////////////////////////////////////////////////////////////////////////////
+
+void dataSource::createListenSocket()
+{
+    //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - create listen socket!!!!!!");
+
+    mListenSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (mListenSockfd < 0) {
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in createListenSocket!!!!!");
+        if (mDebugToConsole)
+            std::cout << "ERROR in createListenSocket. Error: " << errno << " " << strerror(errno) << "\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "ERROR in createListenSocket. Error: %d %s\n", errno, strerror(errno));
+    } else {
+        //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in createListenSocket!!!!!");
+        if (mDebugToConsole)
+            std::cout << "SUCCESS in createListenSocket\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "SUCCESS in createListenSocket\n");
+        mServerStage = serverConnectStage::ServerSocketCreated;
+    }
+
+#ifdef windows_OS
+    u_long iMode = 1;
+    ioctlsocket(mListenSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+#else
+    int flags;
+    flags = fcntl(mListenSockfd, F_GETFL, 0);
+    if (flags != -1)
+        fcntl(mListenSockfd, F_SETFL, flags | O_NONBLOCK);
+
+    bool bOptVal = true;
+    if (setsockopt(mListenSockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&bOptVal, sizeof(BOOL)) == -1)
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - FAILED to set socket options!!!!!");
+#endif
+}
+
+void dataSource::bindListenSocket()
+{
+    struct sockaddr_in source_addr;
+
+#ifdef windows_OS
+    ZeroMemory((char*)&source_addr, sizeof(source_addr));
+#else
+    bzero((char*)&source_addr, sizeof(source_addr));
+#endif
+
+    source_addr.sin_family      = AF_INET;
+    source_addr.sin_addr.s_addr = inet_addr(mSourceIP);
+
+
+	int kPort = mPort + 1;
+    if (mServer)
+        kPort = mPort;
+    source_addr.sin_port = htons(kPort);
+
+    if (bind(mListenSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr)) < 0) {
+        char message[1024];
+        sprintf(message, "dataSource - ERROR in bindListenSocket, port %d!!!!!", kPort);
+        SG_LOG(SG_GENERAL, SG_INFO, message);
+        if (mDebugToConsole)
+            std::cout << "ERROR in bindListenSocket. Error: " << errno << " " << strerror(errno) << "\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "ERROR in bindListenSocket. Error: %d  %s\n\n", errno, strerror(errno));
+    } else {
+        char message[1024];
+        sprintf(message, "dataSource - SUCCESS in bindListenSocket, port %d!!!!!", kPort);
+        SG_LOG(SG_GENERAL, SG_INFO, message);
+        if (mDebugToConsole)
+            std::cout << "SUCCESS in bindListenSocket " << mListenSockfd << "\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "SUCCESS in bindListenSocket %d \n", mListenSockfd);
+        mServerStage = ServerSocketBound;
+    }
+}
+
+
+
+    int n;
+    n = listen(mListenSockfd, 10);
+    if (n == -1) //SOCKET_ERROR)
+    {
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in connectListenSocket!!!!!");
+        if (mDebugToConsole)
+            std::cout << "ERROR in connectListenSocket!  errno " << errno << "  " << strerror(errno) << "\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "ERROR in connectListenSocket. Error: %d  %s\n\n", errno, strerror(errno));
+    } else {
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in connectListenSocket!!!!!");
+        if (mDebugToConsole)
+            std::cout << "SUCCESS in connectListenSocket\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "SUCCESS in connectListenSocket \n");
+
+        
+        mServerStage = ServerSocketListening;
+    }
+
+
+
+
+void dataSource::listenForConnection()
+{
+    mPacketCount = 0;
+    mWorkSockfd  = -1;
+    mWorkSockfd  = accept(mListenSockfd, NULL, NULL);
+
+
+    if (mWorkSockfd == -1) {
+        //SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR in listenForConnection!!!!!");
+        if (mDebugToConsole && (errno != 11)) //11 = resource unavailable, ie waiting for connection.
+            std::cout << "ERROR in listenForConnection. Error " << errno << "   " << strerror(errno) << "\n";
+        if (mDebugToFile && (errno != 11))
+            fprintf(mDebugLog, "ERROR in listenForConnection. Error: %d  %s\n\n", errno, strerror(errno));
+    } else {
+#ifdef windows_OS
+        u_long iMode = 1;
+        ioctlsocket(mWorkSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+#else
+        int flags;
+        flags = fcntl(mWorkSockfd, F_GETFL, 0);
+        if (flags != -1)
+            fcntl(mWorkSockfd, F_SETFL, flags | O_NONBLOCK);
+
+        bool bOptVal = true;
+        if (setsockopt(mWorkSockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&bOptVal, sizeof(BOOL)) == -1)
+            SG_LOG(SG_GENERAL, SG_INFO, "dataSource - FAILED to set socket options!!!!!");
+#endif
+
+        SG_LOG(SG_GENERAL, SG_INFO, "dataSource - SUCCESS in listenForConnection!!!!!");
+        if (mDebugToConsole)
+            std::cout << "SUCCESS in listenForConnection.  workSock: " << mWorkSockfd << "\n";
+        if (mDebugToFile)
+            fprintf(mDebugLog, "SUCCESS in listenForConnection. workSock: %d \n\n", mWorkSockfd);
+        //receivePacket();
+        mServerStage = ServerSocketAccepted;
+    }
+}*/
