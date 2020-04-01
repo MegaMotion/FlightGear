@@ -82,6 +82,7 @@ public:
 #ifdef windows_OS
     SOCKET  mListenSockfd;
     SOCKET  mWorkSockfd;
+    SOCKET  mSendSockfd;
     WSADATA wsaData;
 #else
     int mListenSockfd;

@@ -22,18 +22,16 @@ controlDataSource::~controlDataSource()
 void controlDataSource::tick()
 {
     char message[1024];
-
-    if (mSendControls > 0) 
-    {
+    //sprintf(message, "controlDataSource tick %d server stage %d client stage %d sendcontrols %d time %d", mCurrentTick, mServerStage, mClientStage, mSendControls, returnTimeOfDay());
+    //SG_LOG(SG_GENERAL, SG_INFO, message);
+    if (mSendControls > 0) {
         //sprintf(message, "controlDataSource sending, sendControls %d  clientStage %d  ", mSendControls, mClientStage);
         //SG_LOG(SG_GENERAL, SG_INFO, message);
         if (mClientStage == ClientSocketConnected)
             sendPacket();
         else
             connectSendSocket();
-    } 
-    else if (mListening)
-    {
+    } else if (mListening) {
         //sprintf(message, "controlDataSource listening, serverStage %d", mServerStage);
         //SG_LOG(SG_GENERAL, SG_INFO, message);
         if (mServerStage == ServerSocketAccepted)
@@ -41,7 +39,7 @@ void controlDataSource::tick()
         else
             connectListenSocket();
     }
-    mCurrentTick++;	
+    mCurrentTick++;
 }
 
 
@@ -92,9 +90,7 @@ void controlDataSource::tick()
     */
 
 void controlDataSource::readPacket()
-{
-    short   opcode, controlCount; //,packetCount;
-    char    message[1024];
+{ 
     FD_SET  ReadSet;
     DWORD   total;
     timeval tval;
@@ -106,12 +102,19 @@ void controlDataSource::readPacket()
 
     //THIS is how you actually enforce non-blocking status! Recv will just wait, on its own.
     total = select(0, &ReadSet, NULL, NULL, &tval);
-    if (total == 0)
+    if (total == 0) {
+        //SG_LOG(SG_GENERAL, SG_INFO, "readPacket bailed on select");
         return;
+    }
+    
+    short opcode, controlCount;
+    char  message[1024];
 
     int n = recv(mWorkSockfd, mReturnBuffer, mPacketSize, 0); //mWorkSockfd
-    if (n < 0)
+    if (n < 0) {
+        //SG_LOG(SG_GENERAL, SG_INFO, "readPacket bailed on recv");
         return;
+    }
 
     controlCount = readShort();
     for (short i = 0; i < controlCount; i++) {
@@ -193,7 +196,7 @@ void controlDataSource::handleResetRequest()
     char message[1024];
     sprintf(message, "dataSource - handleResetRequest");
     SG_LOG(SG_GENERAL, SG_INFO, message);
-    
+
     disconnectSockets();
 
     doAircraftReset();

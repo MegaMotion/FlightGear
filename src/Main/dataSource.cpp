@@ -34,6 +34,7 @@ dataSource::dataSource(bool listening, bool alternating, int port, char* IP)
 
     mListenSockfd = 0;
     mWorkSockfd   = 0;
+    mSendSockfd   = 0;
 
     mReturnBuffer     = NULL;
     mSendBuffer       = NULL;
@@ -222,6 +223,20 @@ void dataSource::connectListenSocket()
 
 void dataSource::readPacket()
 {
+    FD_SET  ReadSet;
+    DWORD   total;
+    timeval tval;
+    tval.tv_sec  = 0;
+    tval.tv_usec = 30;
+
+    FD_ZERO(&ReadSet);
+    FD_SET(mWorkSockfd, &ReadSet);
+
+    //THIS is how you actually enforce non-blocking status! Recv will just wait, on its own.
+    total = select(0, &ReadSet, NULL, NULL, &tval);
+    if (total == 0)
+        return;
+
     int n = recv(mWorkSockfd, mReturnBuffer, mPacketSize, 0); //mWorkSockfd
     if (n < 0)
         return;
@@ -267,8 +282,8 @@ void dataSource::connectSendSocket()
     //memset((void*)(mSendBuffer), 0, mPacketSize);
     //memset((void*)(mStringBuffer), 0, mPacketSize);
 
-    mWorkSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (mWorkSockfd < 0) {
+    mSendSockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (mSendSockfd < 0) {
         printf("ERROR opening send socket\n");
         return;
     }
@@ -292,7 +307,7 @@ void dataSource::connectSendSocket()
 
     //#ifdef windows_OS //Whoops! I guess not! This breaks the hell out of everything.
     //u_long iMode = 1;
-    //ioctlsocket(mWorkSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
+    //ioctlsocket(mSendSockfd, FIONBIO, &iMode); //Make it a non-blocking socket.
     //#endif
 
 #ifdef windows_OS
@@ -310,7 +325,7 @@ void dataSource::connectSendSocket()
     source_addr.sin_port = htons(kPort);
 
 
-    int connectCode = connect(mWorkSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr));
+    int connectCode = connect(mSendSockfd, (struct sockaddr*)&source_addr, sizeof(source_addr));
     if (connectCode < 0) {
         char message[1024];
         sprintf(message, "dataSource - ERROR connecting send socket, port %d!!!!!", kPort);
@@ -334,12 +349,12 @@ void dataSource::sendPacket()
     memcpy((void*)&mStringBuffer[sizeof(short)], (void*)mSendBuffer, mPacketSize - sizeof(short));
     //std::string testBuffer = mStringBuffer;
     char message[1024];
-    sprintf(message, "dataSource - sending packet, sendControls %d, sendBytes %d!!!!!",
-            mSendControls, mSendByteCounter);
+    sprintf(message, "dataSource - sending packet, sendControls %d, sendBytes %d  sendSocket %d!!!!!",
+            mSendControls, mSendByteCounter,mSendSockfd);
     SG_LOG(SG_GENERAL, SG_INFO, message);
 
 
-    int n = send(mWorkSockfd, mStringBuffer, mPacketSize, 0);
+    int n = send(mSendSockfd, mStringBuffer, mPacketSize, 0);
     if (n < 0)
         SG_LOG(SG_GENERAL, SG_INFO, "dataSource - ERROR sending packet!!!!!!");
     else 
@@ -385,6 +400,7 @@ void dataSource::disconnectSockets()
 #ifdef windows_OS
     closesocket(mListenSockfd);
     closesocket(mWorkSockfd);
+    closesocket(mSendSockfd);
 #else
     close(mListenSockfd);
     close(mWorkSockfd);
